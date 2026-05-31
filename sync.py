@@ -3,21 +3,25 @@ import calendar
 import logging
 from datetime import datetime
 import requests
-from supabase import create_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL     = os.getenv("SUPABASE_URL")
-SUPABASE_KEY     = os.getenv("SUPABASE_SERVICE_KEY")
-AGENDA_PRO_KEY   = os.getenv("AGENDA_PRO_API_KEY")
-AGENDA_PRO_URL   = "https://agendapro.com/api/public/v1/payments"
-BATCH_SIZE       = 500
+SUPABASE_URL      = os.getenv("SUPABASE_URL")
+SUPABASE_KEY      = os.getenv("SUPABASE_SERVICE_KEY")
+AGENDA_PRO_KEY    = os.getenv("AGENDA_PRO_API_KEY")
+AGENDA_PRO_URL    = "https://agendapro.com/api/public/v1/payments"
+BATCH_SIZE        = 500
 
 if not all([SUPABASE_URL, SUPABASE_KEY, AGENDA_PRO_KEY]):
-    raise RuntimeError("Faltan variables de entorno: SUPABASE_URL, SUPABASE_SERVICE_KEY, AGENDA_PRO_API_KEY")
+    raise RuntimeError("Faltan variables de entorno")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+SUPABASE_HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "resolution=merge-duplicates"
+}
 
 def fetch_payments(from_date, to_date):
     all_data = []
@@ -94,15 +98,15 @@ def parse_payments(payments):
 
 def upsert_rows(rows):
     total_ok = 0
+    url = f"{SUPABASE_URL}/rest/v1/ventas_items"
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i:i+BATCH_SIZE]
         try:
-            supabase.table("ventas_items").upsert(
-                batch, on_conflict="id,service,provider"
-            ).execute()
+            response = requests.post(url, json=batch, headers=SUPABASE_HEADERS, timeout=30)
+            response.raise_for_status()
             total_ok += len(batch)
         except Exception as e:
-            logger.error(f"Error batch {i//BATCH_SIZE + 1}: {e}")
+            logger.error(f"Error batch {i//BATCH_SIZE + 1}: {e} — {response.text if 'response' in dir() else ''}")
     return total_ok
 
 def main():
